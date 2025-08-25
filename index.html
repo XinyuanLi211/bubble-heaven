@@ -57,3 +57,460 @@
 </style>
 </head>
 <body>
+  <header>
+    <div class="top">
+      <div class="brand"><div class="logo">BH</div><div>Bubble Heaven · v0.8</div></div>
+      <div class="ctrls" style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="chip">音效
+          <select id="soundSel" class="chip" style="margin-left:6px">
+            <option value="pop">Classic Pop</option>
+            <option value="pluck">Pluck</option>
+            <option value="wood">Woodblock</option>
+            <option value="8bit">8-bit</option>
+            <option value="snap">Snap</option>
+            <option value="chord">Chord</option>
+          </select>
+        </label>
+        <button id="muteBtn" class="chip btn">🔊 声音开</button>
+        <button id="modeBtn" class="chip btn">🪁 浮力</button>
+        <label class="chip">强度 <input id="strength" type="range" min="20" max="200" value="100" style="vertical-align:middle"> <span id="strengthLab">100%</span></label>
+        <label class="chip">数量 <input id="countRange" type="range" min="10" max="150" value="60" style="vertical-align:middle"> <span id="countLab">60</span></label>
+        <button id="shakeBtn" class="chip btn">🤳 启用摇一摇</button>
+        <button id="shakeTest" class="chip btn">💥 测试群爆</button>
+        <button id="shopBtn" class="chip btn">🛍️ 皮肤商城</button>
+        <label class="chip">昵称 <input id="nick" type="text" placeholder="可选" style="width:120px"></label>
+        <button id="saveNick" class="chip btn">💾 保存 & 上报</button>
+      </div>
+    </div>
+    <div class="stats">
+      <div>今日 <strong id="today">0</strong></div>
+      <div>累计 <strong id="total">0</strong></div>
+      <div>金币 <strong id="coins">0</strong></div>
+      <div id="title" class="chip">称号：新手戳手</div>
+      <div class="chip" style="background:#fff3; border-color:#dfe7ff">提示：连击每 5 次额外 +1 分 +3 金币</div>
+    </div>
+  </header>
+
+  <div id="world" class="world" aria-label="漂浮泡泡世界">
+    <div class="board">
+      <h4>🌍 全球榜（Top 10）</h4>
+      <ol id="topList"><li>未连接（在代码里填 Supabase 参数以启用）</li></ol>
+    </div>
+  </div>
+
+  <div id="combo" class="combo"></div>
+  <div id="toast" class="toast"></div>
+
+  <dialog id="shop" class="modal">
+    <header>
+      <h3 style="margin:0 0 6px">🛍️ 皮肤商城</h3>
+      <div style="color:#6b7a90;font-size:14px">用金币购买皮肤并装备（金币通过手动爆泡获得）。</div>
+    </header>
+    <div class="shop-body">
+      <div style="margin-bottom:8px; color:#6b7a90; font-size:14px">当前金币：<b id="shopCoins">0</b> · 已装备：<b id="equippedLab">classic</b></div>
+      <div class="grid" id="shopGrid"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="chip btn" onclick="document.getElementById('shop').close()">关闭</button></div>
+    </div>
+  </dialog>
+
+  <footer>
+    <div>© Bubble Heaven v0.8 氦气/重力强度 · 连击粒子 · 皮肤商城 · 摇一摇群爆 · 全球榜</div>
+    <div>Tip：点一下页面后浏览器才允许播放声音</div>
+  </footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.46.1/dist/umd/supabase.js"></script>
+<script>
+(() => {
+  const $ = s=>document.querySelector(s);
+  const rnd = (a,b)=>a+Math.random()*(b-a);
+  const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+  const todayStr = ()=>new Date().toISOString().slice(0,10);
+
+  // === 皮肤定义 ===
+  const SKINS = [
+    {id:'classic', name:'经典', price:0, vars:{'--skin-a1':'#ffffff','--skin-a2':'#eaf0ff','--glow':'rgba(80,110,180,.18)','--bubble-opacity':'1'}},
+    {id:'gold', name:'金色', price:200, vars:{'--skin-a1':'#fff0c2','--skin-a2':'#ffd77a','--glow':'rgba(255,190,60,.3)','--bubble-opacity':'1'}},
+    {id:'glass', name:'玻璃', price:150, vars:{'--skin-a1':'#ffffff','--skin-a2':'#ffffff','--glow':'rgba(120,150,220,.12)','--bubble-opacity':'.85'}},
+    {id:'neon', name:'霓虹', price:260, vars:{'--skin-a1':'#d7e1ff','--skin-a2':'#c4f0ff','--glow':'rgba(0,255,200,.35)','--bubble-opacity':'1'}},
+    {id:'emoji', name:'Emoji', price:280, vars:{'--skin-a1':'#fff6d6','--skin-a2':'#ffe8a6','--glow':'rgba(250,200,80,.28)','--bubble-opacity':'1'}, emoji:['😊','😺','😎','🤩','🥳','😆','😉','😮']},
+  ];
+
+  // === 状态 ===
+  const state = {
+    today: 0, total: 0, coins:0, lastDate: todayStr(),
+    muted:false, sound:'pop',
+    bubbles:[], // {el,x,y,vx,vy,size,alive}
+    targetCount: 60,
+    buoyancy:true, // true=向上(氦气球)；false=重力向下
+    strength:100, // 20-200%
+    running: true,
+    combo:0, lastPopAt:0,
+    nickname:'',
+    owned: new Set(['classic']),
+    equipped: 'classic',
+  };
+
+  // === 存储 ===
+  const store = {
+    get(){ return JSON.parse(localStorage.getItem('bh_shop')||'{}') },
+    set(v){ localStorage.setItem('bh_shop', JSON.stringify(v)) }
+  };
+
+  // === 音效 ===
+  const ctx = new (window.AudioContext||window.webkitAudioContext)();
+  function play(kind='pop'){
+    if(state.muted) return;
+    const t0 = ctx.currentTime;
+    if(kind==='pop'){
+      const n=256, node=ctx.createScriptProcessor(n,1,1), g=ctx.createGain();
+      node.onaudioprocess = e=>{ const o=e.outputBuffer.getChannelData(0); for(let i=0;i<n;i++) o[i]=(Math.random()*2-1 + (o[i-1]||0)*0.98) * (1-i/n); };
+      g.gain.setValueAtTime(0.6,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+0.08);
+      node.connect(g).connect(ctx.destination); setTimeout(()=>node.disconnect(),120);
+    }else if(kind==='pluck'){
+      const o=ctx.createOscillator(), g=ctx.createGain(); o.type='sine';
+      o.frequency.setValueAtTime(520,t0); o.frequency.exponentialRampToValueAtTime(220,t0+0.08);
+      g.gain.setValueAtTime(0.4,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+0.12);
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0+0.13);
+    }else if(kind==='wood'){
+      const o=ctx.createOscillator(), g=ctx.createGain(); o.type='triangle';
+      o.frequency.setValueAtTime(380,t0); g.gain.setValueAtTime(0.45,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+0.07);
+      o.connect(g).connect(ctx.destination); o.start(t0); o.stop(t0+0.08);
+    }else if(kind==='8bit'){
+      const notes=[800,600,900,700];
+      const g=ctx.createGain(); g.gain.setValueAtTime(0.25,t0);
+      for(let i=0;i<notes.length;i++){
+        const o=ctx.createOscillator(); o.type='square'; o.frequency.setValueAtTime(notes[i], t0+i*0.03); o.connect(g);
+        o.start(t0+i*0.03); o.stop(t0+i*0.03+0.06);
+      }
+      g.gain.exponentialRampToValueAtTime(0.001, t0+0.18);
+      g.connect(ctx.destination);
+      setTimeout(()=>g.disconnect(),220);
+    }else if(kind==='snap'){
+      const n=256, node=ctx.createScriptProcessor(n,1,1), g=ctx.createGain(), o=ctx.createOscillator();
+      node.onaudioprocess = e=>{ const ch=e.outputBuffer.getChannelData(0); for(let i=0;i<n;i++) ch[i]=(Math.random()*2-1)*(1-i/n); };
+      o.type='sine'; o.frequency.setValueAtTime(1000,t0); o.frequency.exponentialRampToValueAtTime(400,t0+0.05);
+      g.gain.setValueAtTime(0.5,t0); g.gain.exponentialRampToValueAtTime(0.001,t0+0.07);
+      node.connect(g); o.connect(g); g.connect(ctx.destination);
+      o.start(t0); o.stop(t0+0.07); setTimeout(()=>{node.disconnect(); g.disconnect();},120);
+    }else if(kind==='chord'){
+      const g=ctx.createGain(); g.gain.setValueAtTime(0.2,t0);
+      [440,554.37,659.25].forEach((f,i)=>{ const o=ctx.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(f,t0); o.frequency.exponentialRampToValueAtTime(f*0.7,t0+0.15);
+        const gg=ctx.createGain(); gg.gain.setValueAtTime([0.5,0.35,0.3][i],t0); gg.gain.exponentialRampToValueAtTime(0.001,t0+0.2);
+        o.connect(gg).connect(g); o.start(t0); o.stop(t0+0.21);
+      });
+      g.connect(ctx.destination); setTimeout(()=>g.disconnect(),230);
+    }
+  }
+
+  // === UI ===
+  function titleBy(t){
+    if(t<50) return '新手戳手';
+    if(t<200) return '泡泡练习生';
+    if(t<600) return '啪声达人';
+    if(t<1200) return '泡泡术士';
+    if(t<2400) return '气泡贤者';
+    return '宇宙戳王';
+  }
+  function applySkinVars(skinId){
+    const skin = SKINS.find(s=>s.id===skinId) || SKINS[0];
+    Object.entries(skin.vars).forEach(([k,v])=> document.documentElement.style.setProperty(k,v));
+    $('#equippedLab') && ($('#equippedLab').textContent = skin.id);
+  }
+  function syncUI(){
+    $('#today').textContent = state.today;
+    $('#total').textContent = state.total;
+    $('#coins').textContent = state.coins;
+    $('#title').textContent = '称号：'+titleBy(state.total);
+    $('#modeBtn').textContent = state.buoyancy ? '🪁 浮力' : '🪨 重力';
+    $('#countLab').textContent = state.targetCount;
+    $('#strengthLab').textContent = state.strength + '%';
+    $('#shopCoins') && ($('#shopCoins').textContent = state.coins);
+    store.set({today:state.today,total:state.total,coins:state.coins,lastDate:state.lastDate,muted:state.muted,sound:state.sound,targetCount:state.targetCount,buoyancy:state.buoyancy,strength:state.strength,nickname:state.nickname,owned:[...state.owned],equipped:state.equipped});
+  }
+  function toast(msg,ms=1200){
+    const t=$('#toast'); t.textContent=msg; t.style.display='block';
+    clearTimeout(toast._id); toast._id=setTimeout(()=>t.style.display='none',ms);
+  }
+  function showCombo(){
+    const c=$('#combo');
+    c.textContent = state.combo>1 ? state.combo+' COMBO!' : '';
+    c.style.opacity = state.combo>1 ? 1 : 0;
+    c.style.transform = 'translateX(-50%) scale(' + (1 + Math.min(state.combo,10)/12) + ')';
+    clearTimeout(showCombo._id);
+    showCombo._id = setTimeout(()=>{ c.style.opacity=0; }, 600);
+  }
+  function spawnParticles(x,y,count=14){
+    const world=$('#world');
+    for(let i=0;i<count;i++){
+      const p=document.createElement('div'); p.className='particle';
+      const r=rnd(3,7); p.style.width=p.style.height=r+'px'; p.style.background='rgba(106,156,255,'+rnd(0.5,0.9)+')';
+      const vx=rnd(-1.2,1.2), vy=rnd(-1.6,0.2);
+      let px=x, py=y;
+      world.appendChild(p);
+      const t0=performance.now();
+      function step(t){
+        const dt=t-t0;
+        const tt=Math.min(dt,450);
+        px += vx*2; py += vy*2 + tt*0.004;
+        p.style.transform=`translate(${px}px,${py}px)`; p.style.opacity = 1 - tt/450;
+        if(tt<450) requestAnimationFrame(step); else p.remove();
+      }
+      requestAnimationFrame(step);
+    }
+  }
+
+  // === 泡泡 ===
+  const world = $('#world');
+  function spawnBubble(){
+    const size = rnd(28,90);
+    const el = document.createElement('div');
+    el.className='bubble';
+    el.style.width=el.style.height=size+'px';
+
+    // emoji 皮肤
+    if(state.equipped==='emoji'){
+      const emojiSet = SKINS.find(s=>s.id==='emoji').emoji;
+      const span = document.createElement('div');
+      span.className='face';
+      span.textContent = emojiSet[Math.floor(Math.random()*emojiSet.length)];
+      span.style.fontSize = (size*0.35)+'px';
+      el.appendChild(span);
+    }
+
+    const x = rnd(0, world.clientWidth - size);
+    const y = state.buoyancy ? rnd(world.clientHeight*0.6, world.clientHeight - size) : rnd(0, world.clientHeight*0.4);
+    const drift = rnd(-0.25,0.25);
+    const base = (state.buoyancy ? -1 : 1) * rnd(0.08,0.2) * (80/size);
+    const b = {el,x,y,vx:drift,vy:base,size,alive:true};
+    el.style.transform=`translate(${x}px,${y}px)`;
+    el.addEventListener('pointerdown', () => popBubble(b, 'manual'), {passive:true});
+    world.appendChild(el);
+    state.bubbles.push(b);
+  }
+  function popBubble(b, source='manual'){
+    if(!b.alive) return;
+    b.alive=false;
+    b.el.classList.add('pop');
+    const bx=b.x + b.size/2, by=b.y + b.size/2;
+    spawnParticles(bx, by, 18);
+    play(state.sound);
+
+    if(source==='manual'){
+      const now=performance.now();
+      if(now - state.lastPopAt < 800){ state.combo++; } else { state.combo=1; }
+      state.lastPopAt = now;
+      showCombo();
+      if(state.combo>0 && state.combo%5===0){ state.total++; state.coins += 3; }
+      state.today++; state.total++; state.coins++;
+    }else if(source==='shake'){
+      state.total++; state.coins++;
+    }else{
+      state.total++;
+    }
+    syncUI();
+    maybeReport();
+
+    setTimeout(()=>{ b.el.remove(); state.bubbles = state.bubbles.filter(x=>x!==b); ensureCount(); }, 140);
+  }
+  function ensureCount(){
+    const need = state.targetCount - state.bubbles.length;
+    for(let i=0;i<need;i++) spawnBubble();
+  }
+
+  // 动画
+  let lastT = performance.now();
+  function tick(t){
+    const dt = (t-lastT);
+    lastT = t;
+    const w = world.clientWidth, h = world.clientHeight;
+
+    const strengthFactor = state.strength / 100;
+
+    for(const b of state.bubbles){
+      if(!b.alive) continue;
+      b.vy += (state.buoyancy ? -0.00025 : 0.00025) * dt * strengthFactor;
+      b.vx += rnd(-0.0005,0.0005) * dt;
+      const baseV = 0.35*(80/b.size) * strengthFactor;
+      b.vx = clamp(b.vx, -baseV, baseV);
+      if(state.buoyancy){
+        b.vy = clamp(b.vy, -baseV, 0.02);
+      }else{
+        b.vy = clamp(b.vy, -0.02, baseV);
+      }
+
+      b.x += b.vx * dt*0.6;
+      b.y += b.vy * dt*0.6;
+
+      if(b.x<=0){ b.x=0; b.vx = Math.abs(b.vx); }
+      if(b.x + b.size >= w){ b.x = w - b.size; b.vx = -Math.abs(b.vx); }
+
+      if(state.buoyancy && b.y <= -b.size*0.15){ popBubble(b,'auto'); continue; }
+      if(!state.buoyancy && b.y + b.size >= h + b.size*0.15){ popBubble(b,'auto'); continue; }
+
+      b.el.style.transform = `translate(${b.x}px,${b.y}px)`;
+    }
+    if(state.running) requestAnimationFrame(tick);
+  }
+
+  // === 摇一摇群爆 ===
+  let shakeEnabled = false, lastShake = 0;
+  async function enableShake(){
+    try{
+      if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+        const p = await DeviceMotionEvent.requestPermission();
+        if(p !== 'granted'){ toast('未授权加速度计'); return; }
+      }
+      shakeEnabled = true;
+      toast('已启用摇一摇');
+    }catch(e){ toast('设备不支持或权限被拒'); }
+  }
+  function handleMotion(e){
+    if(!shakeEnabled) return;
+    const a = e.accelerationIncludingGravity || e.acceleration;
+    if(!a) return;
+    const mag = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
+    const now = performance.now();
+    if(mag > 18 && (now - lastShake) > 1000){
+      lastShake = now;
+      groupBlast();
+    }
+  }
+  function groupBlast(){
+    const alive = state.bubbles.filter(b=>b.alive);
+    if(!alive.length) return;
+    const n = Math.max(5, Math.floor(alive.length * 0.25));
+    for(let i=0;i<n;i++){
+      const idx = Math.floor(Math.random()*alive.length);
+      const b = alive.splice(idx,1)[0];
+      popBubble(b, 'shake');
+    }
+    toast('💥 摇一摇群爆 x'+n);
+  }
+
+  // === 商城 ===
+  function openShop(){
+    $('#shopCoins').textContent = state.coins;
+    const grid = $('#shopGrid'); grid.innerHTML='';
+    SKINS.forEach(s=>{
+      const card=document.createElement('div'); card.className='card';
+      const prev=document.createElement('div'); prev.className='prev';
+      prev.style.background = `radial-gradient(circle at 35% 30%, rgba(255,255,255,.95) 0 35%, rgba(255,255,255,.6) 36% 55%, rgba(255,255,255,.25) 56% 100%), linear-gradient(145deg, ${s.vars['--skin-a1']}, ${s.vars['--skin-a2']})`;
+      prev.style.boxShadow = `inset 6px 6px 10px rgba(150,170,255,.35), inset -6px -6px 10px rgba(255,255,255,.9), 8px 8px 18px ${s.vars['--glow']}`;
+      prev.style.opacity = s.vars['--bubble-opacity'];
+      const meta=document.createElement('div'); meta.style.flex='1';
+      meta.innerHTML = `<div style="font-weight:700">${s.name} <small style="color:#8a98b3">(${s.id})</small></div>` +
+                       (state.owned.has(s.id) ? `<div class="owned">已拥有</div>` : `<div class="price">价格：${s.price} 金币</div>`);
+      const btn=document.createElement('button'); btn.className='chip btn';
+      btn.textContent = state.owned.has(s.id) ? (state.equipped===s.id?'已装备':'装备') : '购买';
+      btn.onclick = ()=>{
+        if(state.owned.has(s.id)){
+          state.equipped = s.id; applySkinVars(s.id); syncUI(); toast('已装备：'+s.name);
+        }else{
+          if(state.coins < s.price){ toast('金币不足'); return; }
+          state.coins -= s.price; state.owned.add(s.id);
+          state.equipped = s.id;
+          applySkinVars(s.id); syncUI(); openShop();
+          toast('购买成功：'+s.name);
+        }
+      };
+      card.appendChild(prev); card.appendChild(meta); card.appendChild(btn);
+      grid.appendChild(card);
+    });
+    $('#equippedLab').textContent = state.equipped;
+    $('#shopCoins').textContent = state.coins;
+    $('#shop').showModal();
+  }
+
+  // === 排行榜（Supabase） ===
+  const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co"; // TODO: 替换
+  const SUPABASE_ANONKEY = "YOUR-ANON-KEY"; // TODO: 替换
+  let supa = null;
+  try{
+    if(SUPABASE_URL.startsWith("http")){
+      supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANONKEY);
+      fetchTop();
+    }
+  }catch(e){ console.warn(e); }
+
+  function nicknameOrAnon(){ return state.nickname?.trim() || '匿名泡泡客'; }
+  let reportDebounce = 0;
+  function maybeReport(){
+    if(!supa) return;
+    clearTimeout(reportDebounce);
+    reportDebounce = setTimeout(reportScore, 1500);
+    if(state.total % 10 === 0) reportScore();
+  }
+  async function reportScore(){
+    if(!supa) return;
+    try{
+      const { error } = await supa.from('scores').upsert({
+        nickname: nicknameOrAnon(),
+        total: state.total,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'nickname' });
+      if(!error) fetchTop();
+    }catch(e){ console.warn(e); }
+  }
+  async function fetchTop(){
+    if(!supa) return;
+    try{
+      const { data, error } = await supa.from('scores').select('nickname,total').order('total',{ascending:false}).limit(10);
+      if(error) return;
+      const ol = $('#topList'); ol.innerHTML = '';
+      (data||[]).forEach((r,i)=>{
+        const li=document.createElement('li'); li.textContent = `${i+1}. ${r.nickname||'匿名'} — ${r.total}`; ol.appendChild(li);
+      });
+      if(!data || !data.length){
+        $('#topList').innerHTML = '<li>暂无数据</li>';
+      }
+    }catch(e){ console.warn(e); }
+  }
+
+  // === 初始化 ===
+  function init(){
+    const s = store.get();
+    state.today = s.today||0; state.total=s.total||0; state.coins=s.coins||0; state.lastDate=s.lastDate||todayStr();
+    state.muted=!!s.muted; state.sound=s.sound||'pop'; state.targetCount=s.targetCount||60;
+    state.buoyancy = s.buoyancy!==undefined ? s.buoyancy : true;
+    state.strength = s.strength||100; state.nickname = s.nickname||'';
+    state.owned = new Set(s.owned || ['classic']); state.equipped = s.equipped||'classic';
+    applySkinVars(state.equipped);
+
+    if(state.lastDate !== todayStr()){ state.lastDate=todayStr(); state.today=0; }
+
+    $('#soundSel').value = state.sound;
+    $('#muteBtn').textContent = state.muted ? '🔇 静音中' : '🔊 声音开';
+    $('#modeBtn').textContent = state.buoyancy ? '🪁 浮力' : '🪨 重力';
+    $('#countRange').value = state.targetCount; $('#countLab').textContent=state.targetCount;
+    $('#strength').value = state.strength; $('#strengthLab').textContent = state.strength+'%';
+    $('#nick').value = state.nickname;
+
+    syncUI();
+    ensureCount();
+    requestAnimationFrame(tick);
+
+    window.addEventListener('resize', ()=>{
+      state.bubbles.forEach(b=>{
+        b.x = clamp(b.x,0,world.clientWidth-b.size);
+        b.y = clamp(b.y,0,world.clientHeight-b.size);
+      });
+    });
+    $('#soundSel').addEventListener('change', e=>{ state.sound=e.target.value; syncUI(); toast('音效已切换'); });
+    $('#muteBtn').addEventListener('click', e=>{ state.muted=!state.muted; e.currentTarget.textContent = state.muted ? '🔇 静音中' : '🔊 声音开'; syncUI(); });
+    $('#modeBtn').addEventListener('click', ()=>{ state.buoyancy=!state.buoyancy; state.bubbles.forEach(b=>{ b.vy *= -1; }); syncUI(); });
+    $('#countRange').addEventListener('input', e=>{ state.targetCount = +e.target.value; $('#countLab').textContent = state.targetCount; ensureCount(); syncUI(); });
+    $('#strength').addEventListener('input', e=>{ state.strength = +e.target.value; syncUI(); });
+    $('#shakeBtn').addEventListener('click', enableShake);
+    $('#shakeTest').addEventListener('click', groupBlast);
+    window.addEventListener('devicemotion', handleMotion);
+    $('#shopBtn').addEventListener('click', openShop);
+    $('#saveNick').addEventListener('click', ()=>{ state.nickname = $('#nick').value.trim(); syncUI(); toast('昵称已保存'); reportScore(); });
+
+    toast('Tip：手动爆泡得金币，去“皮肤商城”换新外观！');
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
