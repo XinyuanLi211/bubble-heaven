@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<title>Bubble Heaven · v0.8 氦气/重力强度 + 皮肤商城 + 摇一摇群爆</title>
+<style>
+  :root{
+    --bg1:#f6faff; --bg2:#eaf1ff; --ink:#1f2a44; --muted:#6b7a90; --accent:#6a9cff;
+    --shadow:12px 12px 24px rgba(121,151,255,.18), -12px -12px 24px rgba(255,255,255,.9);
+    --skin-a1:#ffffff; --skin-a2:#eaf0ff; --glow:rgba(80,110,180,.18);
+    --bubble-opacity:1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; min-height:100dvh; background:radial-gradient(100% 100% at 100% 0,var(--bg2),var(--bg1)); color:var(--ink);
+       font-family:ui-rounded,system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       display:flex; flex-direction:column; gap:10px}
+  header{padding:12px clamp(10px,3vw,28px) 0}
+  .top{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#a6c8ff,#d7e3ff);display:grid;place-items:center;box-shadow:var(--shadow)}
+  .chip,select,input[type="text"]{background:#fff;border:1px solid #e6ecff;border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);font-size:14px}
+  .btn{cursor:pointer;user-select:none}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:14px;margin-top:6px}
+  .stats strong{color:var(--ink);font-size:18px}
+  .world{position:relative;flex:1;min-height:520px;margin:0 clamp(6px,2vw,18px) 14px;border-radius:20px;box-shadow:var(--shadow);overflow:hidden;background:
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="%23b2c9ff"/><stop offset="1" stop-color="%23f6faff"/></linearGradient></defs><rect width="900" height="640" fill="url(%23g)"/><g opacity=".25"><circle cx="140" cy="120" r="46" fill="%23fff"/><ellipse cx="560" cy="380" rx="300" ry="160" fill="%23fff"/><circle cx="760" cy="180" r="34" fill="%23fff"/></g></svg>')
+    center/cover no-repeat;
+  }
+  .bubble{
+    position:absolute; border-radius:999px; cursor:pointer; user-select:none; touch-action:manipulation; display:grid; place-items:center;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.95) 0 35%, rgba(255,255,255,.6) 36% 55%, rgba(255,255,255,.25) 56% 100%),
+                linear-gradient(145deg,var(--skin-a1),var(--skin-a2));
+    box-shadow: inset 6px 6px 10px rgba(150,170,255,.35), inset -6px -6px 10px rgba(255,255,255,.9), 8px 8px 18px var(--glow);
+    transition: transform .08s ease, opacity .2s ease, box-shadow .2s ease, filter .2s ease;
+    opacity: var(--bubble-opacity);
+    color:#2b3b5a; font-size:20px;
+  }
+  .bubble .face{pointer-events:none; opacity:.85}
+  .bubble:active{transform:scale(.96)}
+  .bubble.pop{ opacity:.2; transform:scale(1.3); filter:saturate(1.1) brightness(1.1); }
+  .particle{ position:absolute; border-radius:999px; pointer-events:none; }
+  .toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#fff;border:1px solid #e6ecff;padding:8px 12px;border-radius:10px;box-shadow:var(--shadow);display:none;z-index:6}
+  footer{padding:0 clamp(10px,3vw,28px) 18px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;align-items:center}
+  .combo{ position:fixed; left:50%; top:60px; transform:translateX(-50%); font-weight:900; font-size:28px; color:var(--accent); text-shadow:0 2px 8px rgba(80,110,180,.35); pointer-events:none; opacity:0; transition:opacity .1s ease, transform .1s ease; z-index:5}
+  .board{ position:absolute; right:10px; top:10px; background:#ffffffcc; backdrop-filter: blur(8px); padding:10px; border-radius:12px; box-shadow:var(--shadow); width:min(300px, 50vw); z-index:2 }
+  .board h4{ margin:0 0 8px 0; font-size:14px; }
+  .board ol{ margin:6px 0 0 20px; padding:0; font-size:13px; max-height:260px; overflow:auto; }
+  dialog.modal{ border:none; padding:0; border-radius:16px; box-shadow:var(--shadow); width:min(720px,92vw); }
+  .modal header{ padding:14px 16px 0; }
+  .shop-body{ padding:0 16px 16px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; }
+  .card{ background:#fff; border:1px solid #e6ecff; border-radius:14px; padding:12px; box-shadow:var(--shadow); display:flex; gap:12px; align-items:center; justify-content:space-between }
+  .prev{ width:56px; height:56px; border-radius:999px; display:grid; place-items:center; }
+  .price{ color:#8a98b3; font-size:12px }
+  .owned{ color:#21a36a; font-weight:700; font-size:12px }
+</style>
+</head>
+<body>
